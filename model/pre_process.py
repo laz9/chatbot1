@@ -23,7 +23,7 @@ class Corpus:
             except:
                 chatDataId = [[[self.word2id[w] for w in qa[0] if w in self.id2word],[self.word2id[w] for w in qa[i] for w in qa[i] if w in self.id2word]] for qa in self.chatDataWord]
 
-            self._QAlens( chatDataId)
+            self._QALens( chatDataId)
             self.maxSentLen = max(maxSentenceWordNum,self.AMaxLen)
             self.QChatDtaId,self.AChatDataId = [qa[0] for qa in chatDataId],[qa[1] for qa in chatDataId]
             self.totalSampleNum = len(data)
@@ -61,13 +61,71 @@ class Corpus:
                 if isDataEnhance:
                     yield self._dataEnhance(samples,dataEnhanceRatio,eosToken,unkToken)
                 else:
-                    QMaxLen,AMaxLen = max(self.Qlens[samples]),max(self.Alens[samples])
+                    QMaxLen,AMaxLen = max(self.QLens[samples]),max(self.ALens[samples])
                     QDataId = np.array([self.QchatDataId[i]+[eosToken for j in range(QMaxLen-self.Qlens[i]+1)] for i in samples],dtype='float32')
                     ADataId = np.array([self.AchatDataId[i]+[eosToken for j in range(AMaxLen-self.Alens[i]+1)] for i in samples],dtype='float32')
-                    yield QDataId,self.Qlens[samples],ADataId,self.Alens[samples]
-                    
+                    yield QDataId,self.QLens[samples],ADataId,self.ALens[samples]
+
+        # 确定一个epoch的数据流 训练数据
+        def one_epoch_data_stream(self,batchSize=128,isDataEnhance=False,dataEnhanceRatio=0.2,tyoe='train'):
+            # 判断数据是不是训练数据，另外给定结束符
+            idList = self.trainIdList if type == 'train' else self.testIdList
+            eosToken = self.word2id['<EOS>']
+            # 做循环
+            for i in range((len(idList)+batchSize-1)//batchSize):
+
+                samples = idList[i*batchSize:(i+1)*batchSize]
+                # 数据增广
+                if isDataEnhance:
+                    yield self._dataEnhance(samples, dataEnhanceRatio, eosToken, unkToken)
+                else:
+                    QMaxLen, AMaxLen = max(self.QLens[samples]), max(self.ALens[samples])
+                    QDataId = np.array(
+                        [self.QchatDataId[i] + [eosToken for j in range(QMaxLen - self.QLens[i] + 1)] for i in samples],
+                        dtype='float32')
+                    ADataId = np.array(
+                        [self.AchatDataId[i] + [eosToken for j in range(AMaxLen - self.Alens[i] + 1)] for i in samples],
+                        dtype='float32')
+                    yield QDataId, self.QLens[samples], ADataId, self.ALens[samples]
+
+        # 遍历
+        def _purity(self,txt):
+            return [filter_sent(qa) for qa in txt]
+
+        # 数据长度的判断
+        def _QALens(self,data):
+            QLens,ALens = [len(qa[0])+1 for qa in data],[len(qa[1])+1 for qa in data]
+            QMaxLen,AMaxLen = max(QLens),max(ALens)
+            print('QMAXLEM:',QMaxLen,'AMAXLEM:',AMaxLen)
+            self.QLens,self.ALens = np.array(QLens,dtype='int32'),np.array(ALens,dtype='int32')
+            self.QMaxLen,self.AMaxLen = QMaxLen,AMaxLen
+
+        # word2id映射关系
+        def _word_id_map(self,data):
+            if self.id2word == None:
+                self.id2word = list(set([w for qa in data for sent in qa for w in sent]))
+                self.id2word.sort()
+                self.id2word = ['<EOS>','<SOS>']+self.id2word+['<UNK>']
+            if self.word2id == None:
+                self.word2id = {i[1]:i[0] for i in enumerate(self.id2word)}
+            if self.wordNum == None:
+                self.wordNum = len(self.id2word)
+            print("Total words Num:",len(self.id2word)-2)
 
 
+
+
+        # seq2id
+        def seq2id(word2id,seqData):
+            seqId = [word2id[w] for w in seqData]
+            return seqId
+        # id2seq
+        def id2seq(id2word,seqId):
+            seqData = [id2word[i] for i in seqId]
+            return seqData
+        # 去掉一些停用词 替代中文的一些符号
+        def filter_sent(sent):
+            return sent.replace('\n',' ').replace('  ',' ').replace(' , ',',').replace('。',',').replace('；',';').replace('？','?').replace('！','!').replace('”','"').replace("’","‘").replace('（','(').replace('）',')')
 
 
 
